@@ -1,0 +1,338 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>MicroScope QC // Image Quality Analysis</title>
+<meta name="description" content="Detect blur, lighting, noise, and density issues in microscopy images." />
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='.9em' font-size='90'%3E🔬%3C/text%3E%3C/svg%3E" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Instrument+Serif:ital@0;1&family=Inter+Tight:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+
+<link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+<header class="topbar">
+  <div class="topbar-left">
+    <div class="brand">
+      <span class="brand-mark">◉</span>
+      <span class="brand-name">MicroScope</span><span class="brand-sub">QC</span>
+    </div>
+    <div class="brand-tag" id="versionTag">v3.0 · AI-Powered Cell Detection</div>
+  </div>
+  <div class="topbar-right">
+    <div class="status-pill" id="apiStatus">
+      <span class="pulse"></span> SYSTEM READY
+    </div>
+    <a href="https://github.com" class="ghost-link" target="_blank" rel="noopener">SOURCE</a>
+  </div>
+</header>
+
+<main id="appMain">
+
+  <!-- ═══════════ HERO ═══════════ -->
+  <section class="hero" id="hero">
+    <div class="hero-grid">
+      <div class="hero-left">
+        <div class="kicker">— Microscopy Diagnostic Tool</div>
+        <h1 class="hero-title">
+          Quality control,<br>
+          <em>before the science.</em>
+        </h1>
+        <p class="hero-lede">
+          Upload any microscopy image — blood smear, histology, fluorescence, brightfield —
+          and get an auditable quality verdict. Every conclusion is backed by a measured value,
+          a documented threshold, and a deterministic decision rule.
+        </p>
+
+        <div class="metric-callouts">
+          <div class="callout"><span class="callout-num">01</span><span class="callout-name">Sharpness</span><span class="callout-desc">Laplacian · Tenengrad · Edge density · FFT</span></div>
+          <div class="callout"><span class="callout-num">02</span><span class="callout-name">Lighting</span><span class="callout-desc">Exposure · Tile-CV · Vignette · Saturation</span></div>
+          <div class="callout"><span class="callout-num">03</span><span class="callout-name">Noise</span><span class="callout-desc">Immerkær σ · SNR · Salt-and-pepper</span></div>
+          <div class="callout"><span class="callout-num">04</span><span class="callout-name">Density</span><span class="callout-desc">CLAHE · Watershed · Solidity · Spatial CV</span></div>
+        </div>
+      </div>
+
+      <div class="hero-right">
+        <div class="upload-zone" id="dropZone">
+          <input type="file" id="fileInput" accept="image/*" hidden />
+          <div class="upload-frame">
+            <div class="upload-corner tl"></div>
+            <div class="upload-corner tr"></div>
+            <div class="upload-corner bl"></div>
+            <div class="upload-corner br"></div>
+
+            <div class="upload-content" id="uploadContent">
+              <div class="upload-icon">
+                <svg viewBox="0 0 64 64" fill="none" stroke="currentColor" stroke-width="1.2">
+                  <circle cx="32" cy="32" r="28" stroke-dasharray="2 4"/>
+                  <circle cx="32" cy="32" r="14"/>
+                  <circle cx="32" cy="32" r="6" fill="currentColor"/>
+                  <path d="M32 4 L32 14 M32 50 L32 60 M4 32 L14 32 M50 32 L60 32" stroke-width="1"/>
+                </svg>
+              </div>
+              <div class="upload-title">DROP IMAGE</div>
+              <div class="upload-sub">or click to browse · PNG, JPG, TIF, BMP</div>
+              <button class="btn-browse" id="browseBtn" type="button">SELECT FILE</button>
+            </div>
+
+            <div class="upload-preview hidden" id="uploadPreview">
+              <img id="previewImg" alt="preview" />
+              <div class="preview-meta">
+                <div class="preview-name" id="previewName"></div>
+                <div class="preview-dim" id="previewDim"></div>
+              </div>
+              <div class="preview-actions">
+                <button class="btn-secondary" id="clearBtn">REPLACE</button>
+                <button class="btn-primary" id="analyzeBtn">
+                  <span>RUN ANALYSIS</span>
+                  <span class="btn-arrow">→</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="upload-foot">
+          <span class="upload-foot-item"><span class="dot"></span>Privacy: images processed in-memory, never stored</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ LOADING ═══════════ -->
+  <section class="loading-section hidden" id="loadingSection">
+    <div class="loading-inner">
+      <div class="scanner">
+        <div class="scanner-line"></div>
+      </div>
+      <div class="loading-text">ANALYZING<span class="dots"></span></div>
+      <div class="loading-steps" id="loadingSteps">
+        <div class="loading-step" data-step="0">► sharpness assessment</div>
+        <div class="loading-step" data-step="1">► illumination uniformity</div>
+        <div class="loading-step" data-step="2">► noise &amp; artifact detection</div>
+        <div class="loading-step" data-step="3">► cell density mapping</div>
+        <div class="loading-step" data-step="4">► verdict reasoning</div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ═══════════ RESULTS ═══════════ -->
+  <section class="results-section hidden" id="resultsSection">
+
+    <!-- VERDICT BANNER -->
+    <div class="score-banner" id="scoreBanner">
+      <div class="score-banner-grid">
+        <div class="score-main">
+          <div class="kicker">— Quality Verdict</div>
+          <div class="score-display">
+            <span class="score-num" id="overallScore">—</span>
+            <span class="score-denom">/ 100</span>
+          </div>
+          <div class="verdict-block">
+            <div class="score-label" id="scoreLabel">— —</div>
+            <div class="confidence-block">
+              <span class="confidence-label">CONFIDENCE</span>
+              <span class="confidence-value" id="confidenceValue">—</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="score-meter">
+          <svg viewBox="0 0 240 240" id="meterSvg" class="meter-svg">
+            <defs>
+              <linearGradient id="meterGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                <stop offset="0%" stop-color="#ff3d5a"/>
+                <stop offset="50%" stop-color="#ffb800"/>
+                <stop offset="100%" stop-color="#00e5a0"/>
+              </linearGradient>
+            </defs>
+            <circle cx="120" cy="120" r="100" stroke="rgba(255,255,255,0.06)" stroke-width="2" fill="none"/>
+            <circle cx="120" cy="120" r="100" stroke="url(#meterGrad)" stroke-width="3" fill="none"
+                    stroke-dasharray="628.3" stroke-dashoffset="628.3"
+                    transform="rotate(-90 120 120)" id="meterArc" stroke-linecap="round"/>
+            <g id="meterTicks"></g>
+            <line x1="120" y1="40" x2="120" y2="50" stroke="rgba(255,255,255,0.4)" stroke-width="1.5"/>
+            <text x="120" y="32" fill="rgba(255,255,255,0.4)" font-family="JetBrains Mono" font-size="9" text-anchor="middle">100</text>
+          </svg>
+        </div>
+
+        <div class="score-summary">
+          <div class="kicker">— Image Profile</div>
+          <table class="info-table">
+            <tr><td>Dimensions</td><td id="infoDim">—</td></tr>
+            <tr><td>Critical findings</td><td id="infoCritical">—</td></tr>
+            <tr><td>Warnings</td><td id="infoWarnings">—</td></tr>
+            <tr><td>Recommendation</td><td id="infoRec">—</td></tr>
+            <tr><td>Analyzer</td><td id="infoVersion">—</td></tr>
+          </table>
+          <button class="btn-tertiary" id="newAnalysisBtn">↻ NEW ANALYSIS</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- DECISION TRAIL -->
+    <div class="decision-section">
+      <div class="section-head">
+        <div class="kicker">— Decision Trail</div>
+        <h2>How this verdict was reached</h2>
+      </div>
+      <ol class="decision-trail" id="decisionTrail"></ol>
+
+      <div class="blockers-block hidden" id="blockersBlock">
+        <div class="blockers-title">Blocking findings</div>
+        <div class="blockers-list" id="blockersList"></div>
+      </div>
+    </div>
+
+    <!-- METRICS -->
+    <div class="metrics-grid">
+      <div class="metric-card" id="cardBlur" data-metric="blur">
+        <div class="metric-head">
+          <div class="metric-num">01</div>
+          <div class="metric-title">SHARPNESS</div>
+          <div class="metric-sev"></div>
+        </div>
+        <div class="metric-score">
+          <span class="ms-num">—</span>
+          <span class="ms-denom">/100</span>
+        </div>
+        <div class="metric-track"><div class="metric-fill"></div></div>
+        <div class="metric-raw"></div>
+        <div class="metric-issues"></div>
+      </div>
+      <div class="metric-card" id="cardLighting" data-metric="lighting">
+        <div class="metric-head">
+          <div class="metric-num">02</div>
+          <div class="metric-title">LIGHTING</div>
+          <div class="metric-sev"></div>
+        </div>
+        <div class="metric-score">
+          <span class="ms-num">—</span>
+          <span class="ms-denom">/100</span>
+        </div>
+        <div class="metric-track"><div class="metric-fill"></div></div>
+        <div class="metric-raw"></div>
+        <div class="metric-issues"></div>
+      </div>
+      <div class="metric-card" id="cardNoise" data-metric="noise">
+        <div class="metric-head">
+          <div class="metric-num">03</div>
+          <div class="metric-title">NOISE</div>
+          <div class="metric-sev"></div>
+        </div>
+        <div class="metric-score">
+          <span class="ms-num">—</span>
+          <span class="ms-denom">/100</span>
+        </div>
+        <div class="metric-track"><div class="metric-fill"></div></div>
+        <div class="metric-raw"></div>
+        <div class="metric-issues"></div>
+      </div>
+      <div class="metric-card" id="cardDensity" data-metric="density">
+        <div class="metric-head">
+          <div class="metric-num">04</div>
+          <div class="metric-title">DENSITY</div>
+          <div class="metric-sev"></div>
+        </div>
+        <div class="metric-score">
+          <span class="ms-num">—</span>
+          <span class="ms-denom">/100</span>
+        </div>
+        <div class="metric-track"><div class="metric-fill"></div></div>
+        <div class="metric-raw"></div>
+        <div class="metric-issues"></div>
+      </div>
+    </div>
+
+    <!-- VISUALIZATIONS -->
+    <div class="viz-section">
+      <div class="section-head">
+        <div class="kicker">— Diagnostics</div>
+        <h2>Visual breakdown</h2>
+      </div>
+
+      <div class="viz-tabs">
+        <button class="viz-tab active" data-tab="cells">CELL DETECTION</button>
+        <button class="viz-tab" data-tab="heatmap">DENSITY HEATMAP</button>
+        <button class="viz-tab" data-tab="histogram">HISTOGRAM</button>
+        <button class="viz-tab" data-tab="comparison">SIDE BY SIDE</button>
+      </div>
+
+      <div class="viz-panel" id="vizPanel">
+        <div class="viz-content active" data-content="cells">
+          <div class="viz-image-wrap">
+            <img id="annotatedImg" alt="Cell detection" />
+            <div class="viz-caption">Cells detected via CLAHE + adaptive threshold + watershed splitting.</div>
+          </div>
+        </div>
+        <div class="viz-content" data-content="heatmap">
+          <div class="viz-image-wrap">
+            <img id="heatmapImg" alt="Density heatmap" />
+            <div class="viz-caption">Spatial density distribution. Bright zones = high cell concentration.</div>
+          </div>
+        </div>
+        <div class="viz-content" data-content="histogram">
+          <div class="histogram-wrap">
+            <svg id="histogramSvg" viewBox="0 0 600 240" preserveAspectRatio="none"></svg>
+            <div class="histogram-legend">
+              <span><span class="hist-dot" style="background:#ff3d5a"></span>RED</span>
+              <span><span class="hist-dot" style="background:#00e5a0"></span>GREEN</span>
+              <span><span class="hist-dot" style="background:#0099ff"></span>BLUE</span>
+            </div>
+            <div class="viz-caption">RGB channel intensity distribution across [0–255].</div>
+          </div>
+        </div>
+        <div class="viz-content" data-content="comparison">
+          <div class="compare-grid">
+            <div class="compare-cell">
+              <div class="compare-label">ORIGINAL</div>
+              <img id="compareOriginal" alt="Original" />
+            </div>
+            <div class="compare-cell">
+              <div class="compare-label">DETECTION OVERLAY</div>
+              <img id="compareAnnotated" alt="Annotated" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- FINDINGS LEDGER -->
+    <div class="issues-section">
+      <div class="section-head">
+        <div class="kicker">— Findings Ledger</div>
+        <h2>All measurements &amp; rules</h2>
+      </div>
+      <div class="findings-controls">
+        <button class="filter-btn active" data-filter="all">ALL</button>
+        <button class="filter-btn" data-filter="fail">CRITICAL</button>
+        <button class="filter-btn" data-filter="warn">WARNINGS</button>
+        <button class="filter-btn" data-filter="pass">PASSING</button>
+      </div>
+      <ul class="issues-list" id="issuesList"></ul>
+    </div>
+
+  </section>
+</main>
+
+<footer class="footer">
+  <div class="footer-left">
+    <span class="mono">MicroScope QC</span> ·
+    Built with OpenCV, NumPy, FastAPI ·
+    <span class="mono">Auditable rules · No black boxes</span>
+  </div>
+  <div class="footer-right">
+    <span class="mono">EDGE</span>
+    <span class="mono">2026</span>
+  </div>
+</footer>
+
+<div class="grain"></div>
+
+<script src="/static/script.js"></script>
+</body>
+</html>
